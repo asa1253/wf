@@ -1,12 +1,12 @@
 name: Warframe精通进度导入并发布Pages
 run-name: 导入并发布 ${{ github.event.inputs.user_id }}
 on:
-  workflow_dispatch:
-    inputs:
-      user_id:6509c147148f3c362c18bcd3
-        description: Warframe user_id（访问warframe.com/api/user-data获取）
-        required: true
-        type: string
+  workflow_dispatch: # 可选保留手动触发，也可以定时触发schedule
+jobs:
+  fetch-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      USER_ID: ${{ secrets.WF_USER_ID }}
 
 jobs:
   fetch-and-publish:
