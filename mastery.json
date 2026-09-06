@@ -1,8 +1,12 @@
 {
   "user_id": "6509c147148f3c362c18bcd3",
-  "displayName": "127636377262",
-  "masteryRank": 16,
-  "masteryXP": 0,
-  "nextRankXP": 0,
-  "progressPercent": 100
+  "display_name": "127636377262",
+  "mastery_rank": 16,
+  "mastery_xp": 0,
+  "next_rank_xp": 0,
+  "progress_pct": 100.0,
+  "progress_text": "已满级",
+  "is_max": true,
+  "updateTime": "2026-09-06 03:23:59",
+  "itemCount": 755
 }
