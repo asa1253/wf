@@ -3,15 +3,11 @@ on:
   workflow_dispatch: # 保留手动触发按钮
   schedule:
     - cron: '0 */8 * * *' # UTC时间 每8小时自动刷新一次，可以自行修改
-
 jobs:
   fetch-and-publish:
     runs-on: ubuntu-latest
     env:
-      HTTP_PROXY: ${{ secrets.HTTP_PROXY }}
-      HTTPS_PROXY: ${{ secrets.HTTP_PROXY }}
-      NO_PROXY: localhost,127.0.0.1
-      USER_ID: ${{ secrets.WF_USER_ID }}
+        USER_ID: ${{ secrets.WF_USER_ID }}
     steps:
       - name: 检出仓库代码
         uses: actions/checkout@v4
@@ -49,31 +45,30 @@ jobs:
               progress_pct = round((mastery_xp / next_rank_xp) * 100, 2)
               progress_text = f"{progress_pct}%"
 
-          # 生成index.html，Github Pages展示页面
-          html_content = f'''<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<title>Warframe精通进度</title>
-<style>
-body {{font-family:system-ui;max-width:600px;margin:40px auto;padding:0 20px;}}
-.card {{border:1px solid #ddd;border-radius:12px;padding:24px;}}
-.progress-bar {{height:20px;background:#eee;border-radius:10px;overflow:hidden;margin:10px 0;}}
-.progress {{height:100%;background:#4285f4;width:{progress_pct}%;}}
-</style>
-</head>
-<body>
-<div class="card">
-<h2>Warframe 精通档案</h2>
-<p>玩家昵称：{display_name}</p>
-<p>精通段位：{mastery_rank}</p>
-<p>当前精通经验：{mastery_xp}</p>
-<p>晋升下一段所需经验：{next_rank_xp}</p>
-<p>进度：{progress_text}</p>
-<div class="progress-bar"><div class="progress"></div></div>
-</div>
-</body>
-</html>'''
+          html_content = f"""<!DOCTYPE html>
+          <html lang="zh-CN">
+          <head>
+          <meta charset="UTF-8">
+          <title>Warframe精通进度</title>
+          <style>
+          body {{font-family:system-ui;max-width:600px;margin:40px auto;padding:0 20px;}}
+          .card {{border:1px solid #ddd;border-radius:12px;padding:24px;}}
+          .progress-bar {{height:20px;background:#eee;border-radius:10px;overflow:hidden;margin:10px 0;}}
+          .progress {{height:100%;background:#4285f4;width:{progress_pct}%;}}
+          </style>
+          </head>
+          <body>
+          <div class="card">
+          <h2>Warframe 精通档案</h2>
+          <p>玩家昵称：{display_name}</p>
+          <p>精通段位：{mastery_rank}</p>
+          <p>当前精通经验：{mastery_xp}</p>
+          <p>晋升下一段所需经验：{next_rank_xp}</p>
+          <p>进度：{progress_text}</p>
+          <div class="progress-bar"><div class="progress"></div></div>
+          </div>
+          </body>
+          </html>"""
           # 写入页面
           with open("index.html", "w", encoding="utf-8") as f:
               f.write(html_content)
