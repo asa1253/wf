@@ -3,100 +3,127 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>Warframe精通进度追踪｜Cookie鉴权版</title>
+<title>Warframe｜真实精通档案自动统计</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-*{box-sizing:border-box;font-family:system-ui,-apple-system}
-body{max-width:1280px;margin:2rem auto;padding:0 1rem;background:#111;color:#eee}
+*{box-sizing:border-box;font-family:system-ui}
+body{max-width:1300px;margin:2rem auto;padding:0 1rem;background:#111;color:#eee}
 h1{color:#f2c94c;text-align:center}
-.grid-row{display:grid;grid-template-columns: 1fr 1fr;gap:16px;margin:20px 0}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:20px 0}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
 .card{border:1px solid #444;padding:16px;border-radius:8px;background:#1e1e1e}
-.stat-card{display:flex;justify-content:space-between;padding:4px 0}
+.stat-line{display:flex;justify-content:space-between;padding:4px 0}
 table{width:100%;border-collapse:collapse;margin-top:1rem}
-th,td{border:1px solid #333;padding:8px 12px;text-align:left}
-input{width:100%;padding:8px;background:#222;border:1px solid #444;color:#fff;border-radius:4px;margin-bottom:12px}
+th,td{border:1px solid #333;padding:8px 10px;text-align:left}
+#search{width:100%;padding:10px;background:#222;border:1px solid #444;color:#fff;border-radius:6px;margin-bottom:12px}
 .tag-prime{color:#ffd700}
 .tag-kuva{color:#bb2222}
 .tag-tenet{color:#6699ff}
-.tag-normal{color:#aaaaaa}
+.tag-normal{color:#aaa}
+.status-yes{color:#4ade80}
+.status-no{color:#777}
 .success{color:#4ade80}
-.warning{color:#ff6666}
+.warn{color:#ff6666}
 </style>
 </head>
 <body>
-<h1>⚔️ Warframe 精通进度追踪（Cookie鉴权）</h1>
+<h1>⚔️ Warframe 个人精通追踪（自动拉取真实档案）</h1>
 <div class="card">
-<p>账号ID：6509c147148f3c362c18bcd3</p>
-<p>更新时间：2026-09-06 00:38 UTC</p>
-
-<p class="warning">⚠️ Cookie无效或未配置，仅展示公开物品库</p>
-
+    <p>用户ID：6509c147148f3c362c18bcd3</p>
+    <p>更新时间：2026-09-06 00:40 UTC</p>
+    
+        <p class="warn">⚠️Cookie失效/未配置，仅展示全局物品库</p>
+    
 </div>
 
-<div class="grid-row">
-    <div class="card">
-        <h2>📊 物品来源分布统计（全游戏）</h2>
-        
-        <div class="stat-card">
-            <span>Prime</span>
-            <span>0 件</span>
-        </div>
-        
-        <div class="stat-card">
-            <span>Kuva</span>
-            <span>0 件</span>
-        </div>
-        
-        <div class="stat-card">
-            <span>Tenet</span>
-            <span>0 件</span>
-        </div>
-        
-        <div class="stat-card">
-            <span>基础版/其他</span>
-            <span>0 件</span>
-        </div>
-        
-    </div>
-    <div class="card">
-        <canvas id="sourceChart"></canvas>
-    </div>
+<div class="grid-3">
+    <div class="card"><canvas id="chartTotal"></canvas></div>
+    <div class="card"><canvas id="chartOwned"></canvas></div>
+    <div class="card"><canvas id="chartMastered"></canvas></div>
 </div>
 
-<input id="searchInput" placeholder="搜索物品名称..." onkeyup="filterTable()">
-<table id="itemTable">
+<div class="card">
+    <h2>📊分来源明细（已精通 / 持有 / 总数）</h2>
+    
+    <div class="stat-line">
+        <span>Prime</span>
+        <span>0精通 / 0持有 / 0全部</span>
+    </div>
+    
+    <div class="stat-line">
+        <span>Kuva</span>
+        <span>0精通 / 0持有 / 0全部</span>
+    </div>
+    
+    <div class="stat-line">
+        <span>Tenet</span>
+        <span>0精通 / 0持有 / 0全部</span>
+    </div>
+    
+    <div class="stat-line">
+        <span>基础版/其他</span>
+        <span>0精通 / 0持有 / 0全部</span>
+    </div>
+    
+</div>
+
+<input id="search" placeholder="搜索物品名称过滤..." oninput="render()">
+<table>
 <thead>
     <tr>
         <th>物品名称</th>
-        <th>来源类型</th>
+        <th>来源</th>
         <th>精通经验</th>
+        <th>已拥有</th>
+        <th>已满级精通</th>
     </tr>
 </thead>
-<tbody>
-
-</tbody>
+<tbody id="tableBody"></tbody>
 </table>
 
 <script>
-const stat = {"Kuva": {"mastered": 0, "owned": 0, "total": 0}, "Prime": {"mastered": 0, "owned": 0, "total": 0}, "Tenet": {"mastered": 0, "owned": 0, "total": 0}, "\u57fa\u7840\u7248/\u5176\u4ed6": {"mastered": 0, "owned": 0, "total": 0}};
-const ctx = document.getElementById('sourceChart').getContext('2d');
-new Chart(ctx,{
+const raw = {"item_list": [], "profile_available": false, "source_stat": {"Kuva": {"mastered": 0, "owned": 0, "total": 0, "xp_mastered": 0, "xp_total": 0}, "Prime": {"mastered": 0, "owned": 0, "total": 0, "xp_mastered": 0, "xp_total": 0}, "Tenet": {"mastered": 0, "owned": 0, "total": 0, "xp_mastered": 0, "xp_total": 0}, "\u57fa\u7840\u7248/\u5176\u4ed6": {"mastered": 0, "owned": 0, "total": 0, "xp_mastered": 0, "xp_total": 0}}, "update_time": "2026-09-06 00:40 UTC", "user_id": "6509c147148f3c362c18bcd3"};
+const items = raw.item_list;
+const stat = raw.source_stat;
+
+// 三张环形图
+new Chart(document.getElementById('chartTotal'),{
     type:'doughnut',
-    data:{
-        labels:Object.keys(stat),
-        data:Object.values(stat).map(s=>s.total),
-        backgroundColor:["#ffd700","#bb2222","#6699ff","#777777"]
-    },
-    options:{plugins:{title:{display:true,text:"全游戏物品来源占比"}}}
+    data:{labels:Object.keys(stat),data:Object.values(stat).map(x=>x.total)},
+    options:{plugins:{title:{display:true,text:"全物品分布"}}}
+});
+new Chart(document.getElementById('chartOwned'),{
+    type:'doughnut',
+    data:{labels:Object.keys(stat),data:Object.values(stat).map(x=>x.owned)},
+    options:{plugins:{title:{display:true,text:"你已拥有"}}}
+});
+new Chart(document.getElementById('chartMastered'),{
+    type:'doughnut',
+    data:{labels:Object.keys(stat),data:Object.values(stat).map(x=>x.mastered)},
+    options:{plugins:{title:{display:true,text:"你已精通"}}}
 });
 
-function filterTable(){
-    const kw = document.getElementById("searchInput").value.toLowerCase();
-    document.querySelectorAll("#itemTable tbody tr").forEach(row=>{
-        const name = row.children[0].innerText.toLowerCase();
-        row.style.display = name.includes(kw)?"":"none";
+function render(){
+    const kw = document.getElementById("search").value.toLowerCase();
+    const tbody = document.getElementById("tableBody");
+    tbody.innerHTML = "";
+    items.filter(i=>i.name.toLowerCase().includes(kw)).forEach(it=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+        <td>${it.name}</td>
+        <td><span class="${
+            it.source==='Prime'?'tag-prime':
+            it.source==='Kuva'?'tag-kuva':
+            it.source==='Tenet'?'tag-tenet':'tag-normal'
+        }">${it.source}</span></td>
+        <td>${it.masteryXP}</td>
+        <td class="${it.owned?'status-yes':'status-no'}">${it.owned?"是":"否"}</td>
+        <td class="${it.mastered?'status-yes':'status-no'}">${it.mastered?"是":"否"}</td>
+        `;
+        tbody.appendChild(tr);
     })
 }
+render();
 </script>
 </body>
 </html>
