@@ -17,6 +17,9 @@ concurrency:
 jobs:
   fetch-and-render:
     runs-on: ubuntu-latest
+    env:
+      WF_COOKIE: ${{ secrets.WF_COOKIE }}
+      WF_USER_ID: ${{ secrets.WF_USER_ID }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
