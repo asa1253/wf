@@ -4,10 +4,11 @@ from jinja2 import Template
 from datetime import datetime
 import os
 
-USER_ID = "6509c147148f3c362c18bcd3"
+# 从环境变量读取密钥（不在代码硬编码）
+USER_ID = os.getenv("WF_USER_ID","")
+WF_COOKIE = os.getenv("WF_COOKIE","")
 PLATFORM = "pc"
 
-# 段位经验门槛表
 MR_THRESHOLDS = [
     0, 2500, 5750, 9750, 14500, 20000, 26250, 33250, 41000, 49500,
     58750, 68750, 79500, 91000, 103250, 116250, 130000, 144500, 159750, 175750
@@ -23,10 +24,15 @@ def get_item_source(item_name: str) -> str:
         return "Tenet"
     return "基础版/其他"
 
-# 创建data文件夹
 os.makedirs("data", exist_ok=True)
 
-# 1. 获取warframestat物品列表（公开接口，兼容多种返回格式）
+# 请求头配置：携带登录Cookie
+headers = {}
+if WF_COOKIE:
+    headers["Cookie"] = WF_COOKIE
+    headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# 拉取公开物品列表
 item_list = []
 try:
     item_api = f"https://api.warframestat.us/{PLATFORM}/items"
@@ -40,26 +46,28 @@ except Exception as e:
     print(f"⚠️ 物品接口请求失败: {e}")
     item_list = []
 
-# 2. 获取玩家档案（DE匿名访问会失败，容错保护）
+# 使用Cookie请求个人档案
 profile_data = {}
-try:
-    profile_api = f"https://api.warframe.com/cdn/getProfileViewingData.php?playerId={USER_ID}"
-    resp_profile = requests.get(profile_api, timeout=15)
-    ctype = resp_profile.headers.get("content-type", "")
-    if ctype.startswith("application/json"):
-        profile_data = resp_profile.json()
-    else:
-        print("⚠️ DE个人档案接口无权限，返回非JSON内容，跳过玩家数据")
-except Exception as e:
-    print(f"⚠️ 玩家档案请求异常：{e}")
+if USER_ID and WF_COOKIE:
+    try:
+        profile_api = f"https://api.warframe.com/cdn/getProfileViewingData.php?playerId={USER_ID}"
+        resp_profile = requests.get(profile_api, headers=headers, timeout=15)
+        ctype = resp_profile.headers.get("content-type", "")
+        if ctype.startswith("application/json"):
+            profile_data = resp_profile.json()
+            print("✅ 成功获取DE个人档案数据")
+        else:
+            print("⚠️ Cookie失效 / 权限不足，返回非JSON")
+    except Exception as e:
+        print(f"⚠️ 玩家档案请求异常：{e}")
+else:
+    print("ℹ️ 未配置WF_COOKIE或WF_USER_ID，跳过个人档案拉取")
 
-# 保存原始文件（即使是空的）
 with open("data/raw_profile.json", "w", encoding="utf-8") as f:
     json.dump(profile_data, f, ensure_ascii=False, indent=2)
 with open("data/raw_items.json", "w", encoding="utf-8") as f:
     json.dump(item_list, f, ensure_ascii=False, indent=2)
 
-# 来源统计容器
 source_stat = {
     "Prime": {"total": 0, "owned": 0, "mastered": 0},
     "Kuva": {"total": 0, "owned": 0, "mastered": 0},
@@ -69,24 +77,21 @@ source_stat = {
 
 parsed_items = []
 for it in item_list:
-    # 关键修复：只处理字典对象，跳过字符串/无效数据
     if not isinstance(it, dict):
         continue
     item_name = it.get("name", "未知")
     source = get_item_source(item_name)
     source_stat[source]["total"] += 1
-
-    item_info = {
+    parsed_items.append({
         "name": item_name,
         "source": source,
         "masteryXP": it.get("masteryReq", 0),
         "owned": False,
         "mastered": False
-    }
-    parsed_items.append(item_info)
+    })
 
 export_data = {
-    "user_id": USER_ID,
+    "user_id": USER_ID if USER_ID else "未填写",
     "update_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
     "source_stat": source_stat,
     "item_list": parsed_items,
@@ -95,13 +100,12 @@ export_data = {
 with open("data/mastery.json", "w", encoding="utf-8") as f:
     json.dump(export_data, f, ensure_ascii=False, indent=2)
 
-# HTML页面模板（Chart.js饼图 + 搜索筛选 + 来源彩色标签）
 html_template = Template("""
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>Warframe精通进度追踪｜来源统计</title>
+<title>Warframe精通进度追踪｜Cookie鉴权版</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui,-apple-system}
@@ -117,16 +121,19 @@ input{width:100%;padding:8px;background:#222;border:1px solid #444;color:#fff;bo
 .tag-kuva{color:#bb2222}
 .tag-tenet{color:#6699ff}
 .tag-normal{color:#aaaaaa}
+.success{color:#4ade80}
 .warning{color:#ff6666}
 </style>
 </head>
 <body>
-<h1>⚔️ Warframe 精通进度追踪</h1>
+<h1>⚔️ Warframe 精通进度追踪（Cookie鉴权）</h1>
 <div class="card">
 <p>账号ID：{{data.user_id}}</p>
 <p>更新时间：{{data.update_time}}</p>
-{% if not data.profile_available %}
-<p class="warning">⚠️ 无法自动读取个人档案（DE接口需要登录Cookie），当前仅展示全游戏物品库统计</p>
+{% if data.profile_available %}
+<p class="success">✅ Cookie鉴权成功，读取个人档案</p>
+{% else %}
+<p class="warning">⚠️ Cookie无效或未配置，仅展示公开物品库</p>
 {% endif %}
 </div>
 
@@ -200,4 +207,4 @@ render_html = html_template.render(data=export_data)
 with open("index.html", "w", encoding="utf-8") as page:
     page.write(render_html)
 
-print("✅ 页面生成完成 index.html（完整容错修复版）")
+print("✅ 页面生成完成")
