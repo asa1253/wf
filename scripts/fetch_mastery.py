@@ -26,22 +26,27 @@ def get_item_source(item_name: str) -> str:
 # 创建data文件夹
 os.makedirs("data", exist_ok=True)
 
-# 1. 获取warframestat物品列表（这个接口公开可用）
+# 1. 获取warframestat物品列表（公开接口，兼容多种返回格式）
+item_list = []
 try:
     item_api = f"https://api.warframestat.us/{PLATFORM}/items"
     resp_items = requests.get(item_api, timeout=15)
-    item_list = resp_items.json()
+    raw = resp_items.json()
+    if isinstance(raw, dict):
+        item_list = raw.get("items") or raw.get("data") or []
+    elif isinstance(raw, list):
+        item_list = raw
 except Exception as e:
-    print(f"物品接口请求失败: {e}")
+    print(f"⚠️ 物品接口请求失败: {e}")
     item_list = []
 
-# 2. 获取玩家档案（DE接口匿名访问会失败，增加容错）
+# 2. 获取玩家档案（DE匿名访问会失败，容错保护）
 profile_data = {}
 try:
     profile_api = f"https://api.warframe.com/cdn/getProfileViewingData.php?playerId={USER_ID}"
     resp_profile = requests.get(profile_api, timeout=15)
-    # 判断返回是否为JSON
-    if resp_profile.headers.get("content-type","").startswith("application/json"):
+    ctype = resp_profile.headers.get("content-type", "")
+    if ctype.startswith("application/json"):
         profile_data = resp_profile.json()
     else:
         print("⚠️ DE个人档案接口无权限，返回非JSON内容，跳过玩家数据")
@@ -49,45 +54,48 @@ except Exception as e:
     print(f"⚠️ 玩家档案请求异常：{e}")
 
 # 保存原始文件（即使是空的）
-with open("data/raw_profile.json","w",encoding="utf-8") as f:
-    json.dump(profile_data,f,ensure_ascii=False,indent=2)
-with open("data/raw_items.json","w",encoding="utf-8") as f:
-    json.dump(item_list,f,ensure_ascii=False,indent=2)
+with open("data/raw_profile.json", "w", encoding="utf-8") as f:
+    json.dump(profile_data, f, ensure_ascii=False, indent=2)
+with open("data/raw_items.json", "w", encoding="utf-8") as f:
+    json.dump(item_list, f, ensure_ascii=False, indent=2)
 
 # 来源统计容器
 source_stat = {
-    "Prime": {"total":0,"owned":0,"mastered":0},
-    "Kuva": {"total":0,"owned":0,"mastered":0},
-    "Tenet": {"total":0,"owned":0,"mastered":0},
-    "基础版/其他": {"total":0,"owned":0,"mastered":0},
+    "Prime": {"total": 0, "owned": 0, "mastered": 0},
+    "Kuva": {"total": 0, "owned": 0, "mastered": 0},
+    "Tenet": {"total": 0, "owned": 0, "mastered": 0},
+    "基础版/其他": {"total": 0, "owned": 0, "mastered": 0},
 }
 
 parsed_items = []
 for it in item_list:
-    item_name = it.get("name","未知")
+    # 关键修复：只处理字典对象，跳过字符串/无效数据
+    if not isinstance(it, dict):
+        continue
+    item_name = it.get("name", "未知")
     source = get_item_source(item_name)
     source_stat[source]["total"] += 1
 
     item_info = {
-        "name":item_name,
-        "source":source,
-        "masteryXP":it.get("masteryReq",0),
-        "owned":False,
-        "mastered":False
+        "name": item_name,
+        "source": source,
+        "masteryXP": it.get("masteryReq", 0),
+        "owned": False,
+        "mastered": False
     }
     parsed_items.append(item_info)
 
 export_data = {
-    "user_id":USER_ID,
-    "update_time":datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
-    "source_stat":source_stat,
-    "item_list":parsed_items,
+    "user_id": USER_ID,
+    "update_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    "source_stat": source_stat,
+    "item_list": parsed_items,
     "profile_available": bool(profile_data)
 }
-with open("data/mastery.json","w",encoding="utf-8") as f:
-    json.dump(export_data,f,ensure_ascii=False,indent=2)
+with open("data/mastery.json", "w", encoding="utf-8") as f:
+    json.dump(export_data, f, ensure_ascii=False, indent=2)
 
-# HTML页面模板
+# HTML页面模板（Chart.js饼图 + 搜索筛选 + 来源彩色标签）
 html_template = Template("""
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -189,7 +197,7 @@ function filterTable(){
 """)
 
 render_html = html_template.render(data=export_data)
-with open("index.html","w",encoding="utf-8") as page:
+with open("index.html", "w", encoding="utf-8") as page:
     page.write(render_html)
 
-print("✅ 页面生成完成 index.html（已增加异常容错）")
+print("✅ 页面生成完成 index.html（完整容错修复版）")
