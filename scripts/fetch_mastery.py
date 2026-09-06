@@ -2,8 +2,9 @@ import requests
 import json
 from jinja2 import Template
 from datetime import datetime
+import os
 
-USER_ID = "5f1234567890abcdef123456"
+USER_ID = "6509c147148f3c362c18bcd3"
 PLATFORM = "pc"
 
 # 段位经验门槛表
@@ -12,7 +13,6 @@ MR_THRESHOLDS = [
     58750, 68750, 79500, 91000, 103250, 116250, 130000, 144500, 159750, 175750
 ]
 
-# 判断物品来源工具函数
 def get_item_source(item_name: str) -> str:
     name = item_name.lower()
     if "prime" in name:
@@ -23,17 +23,32 @@ def get_item_source(item_name: str) -> str:
         return "Tenet"
     return "基础版/其他"
 
-# 拉取公开物品库
-item_api = f"https://api.warframestat.us/{PLATFORM}/items"
-resp_items = requests.get(item_api, timeout=15)
-item_list = resp_items.json()
+# 创建data文件夹
+os.makedirs("data", exist_ok=True)
 
-# 拉取玩家公开档案
-profile_api = f"https://api.warframe.com/cdn/getProfileViewingData.php?playerId={USER_ID}"
-resp_profile = requests.get(profile_api, timeout=15)
-profile_data = resp_profile.json()
+# 1. 获取warframestat物品列表（这个接口公开可用）
+try:
+    item_api = f"https://api.warframestat.us/{PLATFORM}/items"
+    resp_items = requests.get(item_api, timeout=15)
+    item_list = resp_items.json()
+except Exception as e:
+    print(f"物品接口请求失败: {e}")
+    item_list = []
 
-# 保存原始数据
+# 2. 获取玩家档案（DE接口匿名访问会失败，增加容错）
+profile_data = {}
+try:
+    profile_api = f"https://api.warframe.com/cdn/getProfileViewingData.php?playerId={USER_ID}"
+    resp_profile = requests.get(profile_api, timeout=15)
+    # 判断返回是否为JSON
+    if resp_profile.headers.get("content-type","").startswith("application/json"):
+        profile_data = resp_profile.json()
+    else:
+        print("⚠️ DE个人档案接口无权限，返回非JSON内容，跳过玩家数据")
+except Exception as e:
+    print(f"⚠️ 玩家档案请求异常：{e}")
+
+# 保存原始文件（即使是空的）
 with open("data/raw_profile.json","w",encoding="utf-8") as f:
     json.dump(profile_data,f,ensure_ascii=False,indent=2)
 with open("data/raw_items.json","w",encoding="utf-8") as f:
@@ -62,20 +77,17 @@ for it in item_list:
     }
     parsed_items.append(item_info)
 
-# 简单模拟玩家拥有/精通逻辑（后续你可以对接真实档案字段替换）
-# profile_data 真实解锁逻辑这里预留扩展点
-
-# 写入汇总数据
 export_data = {
     "user_id":USER_ID,
     "update_time":datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
     "source_stat":source_stat,
-    "item_list":parsed_items
+    "item_list":parsed_items,
+    "profile_available": bool(profile_data)
 }
 with open("data/mastery.json","w",encoding="utf-8") as f:
     json.dump(export_data,f,ensure_ascii=False,indent=2)
 
-# HTML模板（新增来源统计卡片 + Chart.js环形图）
+# HTML页面模板
 html_template = Template("""
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -89,14 +101,15 @@ body{max-width:1280px;margin:2rem auto;padding:0 1rem;background:#111;color:#eee
 h1{color:#f2c94c;text-align:center}
 .grid-row{display:grid;grid-template-columns: 1fr 1fr;gap:16px;margin:20px 0}
 .card{border:1px solid #444;padding:16px;border-radius:8px;background:#1e1e1e}
-.stat-card{display:flex;justify-content:space-between}
+.stat-card{display:flex;justify-content:space-between;padding:4px 0}
 table{width:100%;border-collapse:collapse;margin-top:1rem}
 th,td{border:1px solid #333;padding:8px 12px;text-align:left}
 input{width:100%;padding:8px;background:#222;border:1px solid #444;color:#fff;border-radius:4px;margin-bottom:12px}
 .tag-prime{color:#ffd700}
-.tag-kuva{color:#992222}
+.tag-kuva{color:#bb2222}
 .tag-tenet{color:#6699ff}
 .tag-normal{color:#aaaaaa}
+.warning{color:#ff6666}
 </style>
 </head>
 <body>
@@ -104,15 +117,18 @@ input{width:100%;padding:8px;background:#222;border:1px solid #444;color:#fff;bo
 <div class="card">
 <p>账号ID：{{data.user_id}}</p>
 <p>更新时间：{{data.update_time}}</p>
+{% if not data.profile_available %}
+<p class="warning">⚠️ 无法自动读取个人档案（DE接口需要登录Cookie），当前仅展示全游戏物品库统计</p>
+{% endif %}
 </div>
 
 <div class="grid-row">
     <div class="card">
-        <h2>📊 物品来源分布统计</h2>
+        <h2>📊 物品来源分布统计（全游戏）</h2>
         {% for key,val in data.source_stat.items() %}
         <div class="stat-card">
             <span>{{key}}</span>
-            <span>{{val.mastered}} / {{val.total}}</span>
+            <span>{{val.total}} 件</span>
         </div>
         {% endfor %}
     </div>
@@ -157,7 +173,7 @@ new Chart(ctx,{
         data:Object.values(stat).map(s=>s.total),
         backgroundColor:["#ffd700","#bb2222","#6699ff","#777777"]
     },
-    options:{plugins:{title:{display:true,text:"全物品来源占比"}}}
+    options:{plugins:{title:{display:true,text:"全游戏物品来源占比"}}}
 });
 
 function filterTable(){
@@ -176,4 +192,4 @@ render_html = html_template.render(data=export_data)
 with open("index.html","w",encoding="utf-8") as page:
     page.write(render_html)
 
-print("✅ 带来源统计页面已生成 index.html")
+print("✅ 页面生成完成 index.html（已增加异常容错）")
