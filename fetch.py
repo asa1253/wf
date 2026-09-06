@@ -1,0 +1,63 @@
+import requests
+import json
+import os
+
+user_id = os.environ["USER_ID"]
+api_url = f"https://api.warframestat.us/profile/{user_id}"
+resp = requests.get(api_url, timeout=20)
+resp.raise_for_status()
+data = resp.json()
+
+# 解析精通相关字段
+display_name = data.get("displayName", "未知玩家")
+mastery_rank = data.get("masteryRank", 0)
+mastery_xp = data.get("masteryXP", 0)
+next_rank_xp = data.get("nextRankXP", 0)
+
+if next_rank_xp == 0:
+    progress_pct = 100
+    progress_text = "已满级"
+else:
+    progress_pct = round((mastery_xp / next_rank_xp) * 100, 2)
+    progress_text = f"{progress_pct}%"
+
+html_content = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Warframe精通进度</title>
+<style>
+body {{font-family:system-ui;max-width:600px;margin:40px auto;padding:0 20px;}}
+.card {{border:1px solid #ddd;border-radius:12px;padding:24px;}}
+.progress-bar {{height:20px;background:#eee;border-radius:10px;overflow:hidden;margin:10px 0;}}
+.progress {{height:100%;background:#4285f4;width:{progress_pct}%;}}
+</style>
+</head>
+<body>
+<div class="card">
+<h2>Warframe 精通档案</h2>
+<p>玩家昵称：{display_name}</p>
+<p>精通段位：{mastery_rank}</p>
+<p>当前精通经验：{mastery_xp}</p>
+<p>晋升下一段所需经验：{next_rank_xp}</p>
+<p>进度：{progress_text}</p>
+<div class="progress-bar"><div class="progress"></div></div>
+</div>
+</body>
+</html>"""
+
+# 写入页面
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(html_content)
+
+# 保存原始json数据备份
+result_data = {
+    "user_id": user_id,
+    "displayName": display_name,
+    "masteryRank": mastery_rank,
+    "masteryXP": mastery_xp,
+    "nextRankXP": next_rank_xp,
+    "progressPercent": progress_pct
+}
+with open("mastery.json", "w", encoding="utf-8") as f:
+    json.dump(result_data, f, ensure_ascii=False, indent=2)
