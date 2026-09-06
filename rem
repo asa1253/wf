@@ -1,0 +1,94 @@
+# warframe-profile-tracker
+
+定时拉取指定 Warframe 玩家公开档案，递归对比历史快照，生成美观的中文单页对比报告，并通过 GitHub Actions 自动部署到 GitHub Pages。
+
+## 功能
+
+- **定时拉取**：带 `User-Agent` + `Referer` 请求 Warframe 官方 CDN 接口，规避基础反爬。
+- **历史快照**：每次拉取原子写入 `data/latest.json` 与 `data/history/YYYYMMDD-HHMMSS.json`（UTC），可回看任意历史。
+- **通用递归 diff**：不硬编码字段路径，对任意嵌套 JSON 做递归对比，自动识别新增 / 删除 / 修改、类型变化、数组长度变化、长字符串截断。
+- **中文单页报告**：深色主题、响应式、分类标签页（战甲 / 武器 / 宠物 / 任务统计 / 其他）、搜索过滤、可折叠树形概览、历史快照在线对比，全部 CSS/JS 内联，无外部 CDN。
+- **自动部署**：GitHub Actions 每 6 小时跑一次，提交数据回主分支并发布到 GitHub Pages。
+
+## 快速开始（本地）
+
+```bash
+# 1. 安装依赖（仅 requests）
+pip install -r requirements.txt
+
+# 2. 拉取并生成报告
+python scripts/run_all.py
+
+# 3. 打开报告
+#    直接用浏览器打开 index.html
+```
+
+> 拉取失败（网络 / 403 / 档案未公开）时脚本不会覆盖已有 `latest.json`，但仍会基于现有数据重新生成 HTML，便于本地调试。
+
+仅基于本地已有数据重新生成（不发请求）：
+
+```bash
+python scripts/run_all.py --skip-fetch
+```
+
+## 仓库结构
+
+```
+warframe-profile-tracker/
+├── .github/workflows/sync.yml     # 定时 + 手动触发的 CI
+├── scripts/
+│   ├── fetch_profile.py           # 拉取 + 持久化快照
+│   ├── recursive_diff.py          # 通用递归 diff 库（可独立 import）
+│   ├── generate_report.py         # 读快照生成 index.html
+│   └── run_all.py                 # fetch → save → generate 串联入口
+├── data/
+│   ├── latest.json                # 最新快照（git 跟踪）
+│   └── history/                   # 时间戳历史快照（运行时生成）
+├── docs/design.md                 # 设计说明
+├── tests/test_diff.py             # 递归 diff 单元测试
+├── index.html                     # 构建产物
+├── requirements.txt
+└── README.md
+```
+
+## 部署到 GitHub Pages
+
+1. **创建仓库**：把本项目代码推到你自己的 GitHub 仓库（`git init && git add . && git commit -m init && git push`）。
+2. **放开 Actions 写权限**：仓库 **Settings → Actions → General → Workflow permissions**，选择 **Read and write permissions**，保存。
+3. **配置 Pages**：**Settings → Pages → Source** 选 **Deploy from a branch**，分支选 `gh-pages`，目录选 `/ (root)`。
+4. **手动跑一次**：**Actions → Sync Warframe Profile → Run workflow**，验证拉取与部署成功。完成后 Pages 地址即为你的报告地址。
+5. **改成自己的 playerId（可选）**：
+   - 编辑 `scripts/fetch_profile.py` 顶部的 `DEFAULT_PLAYER_ID`，或在 CI 中通过参数传入。
+      - 开启公开档案：Warframe 游戏内 **Options → System → Profile → Public Profile** 设为开启，否则接口返回空 JSON。
+
+      ## 接口与反爬说明
+
+      - 接口：`https://api.warframe.com/cdn/getProfileViewingData.php?playerId=<AccountId.$oid>`
+      - 请求必须带：
+        - `User-Agent`：模拟桌面浏览器（脚本默认 Chrome UA）。
+          - `Referer: https://www.warframe.com/`。
+          - 公共 Runner 出口 IP 不固定，接口可能返回 **403**；此时脚本打印日志、不写快照、不覆盖 `latest.json`。下一轮 cron 会自动重试。
+          - 玩家档案必须公开，否则返回空对象，脚本会识别并告警。
+
+          ## 验证
+
+          ```bash
+          # 单元测试（纯标准库，不依赖网络）
+          python -m unittest tests.test_diff -v
+
+          # 用模拟数据本地跑一遍 diff + 生成（跳过 fetch）
+          python scripts/run_all.py --skip-fetch
+          ```
+
+          ## 已知缺口与限制
+
+          - 公共 Runner IP 可能被接口 403，属于正常现象，等待下一轮即可。
+          - 玩家档案未公开时拉取为空，报告不会更新。
+          - 历史快照长期累积会让仓库体积增长，需定期清理 `data/history/`。
+          - GitHub cron 最小间隔建议 ≥ 6 小时，过密容易触发限流 / 反爬。
+          - 这是非官方接口，Warframe 随时可能变更返回结构；本项目用通用递归 diff 降低了字段变更的影响，但整体仍依赖该接口可用。
+
+          ## License
+
+          MIT
+          
