@@ -7,10 +7,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       USER_ID: ${{ secrets.WF_USER_ID }}
-
-jobs:
-  fetch-and-publish:
-    runs-on: ubuntu-latest
     steps:
       - name: 检出仓库代码
         uses: actions/checkout@v4
